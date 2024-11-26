@@ -1,0 +1,18 @@
+["vcalendar",
+ [
+   ["calscale", {}, "text", "GREGORIAN"],
+   ["prodid", {}, "text", "-//Example Inc.//Example Calendar//EN"],
+   ["version", {}, "text", "2.1"]
+ ],
+ [
+   ["vevent",
+     [
+       ["dtstamp", {}, "date-time", "2024-03-02T19:45:22Z"],
+       ["dtstart", {}, "date", "2023-11-26"],
+       ["summary", {}, "text", "Daily Call"],
+       ["uid", {}, "text", "4077H990A4E897K3I484909"]
+     ],
+     []
+   ]
+ ]
+]

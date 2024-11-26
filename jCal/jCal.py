@@ -1,26 +1,47 @@
+from datetime import date, datetime, time, timedelta
 import icalendar
 
 
-TYPE_MAP = {
-    icalendar.vText: "text",
-}
-
-def convert_property(prop):
+def convert_property(name, prop):
+    name = name.lower()
+    params = dict(prop.params)
+    if isinstance(prop, icalendar.vDDDTypes):
+        dt = prop.dt
+        if isinstance(dt, datetime):
+            prop = icalendar.vDatetime(dt)
+        elif isinstance(dt, date):
+            prop = icalendar.vDate(dt)
+        elif isinstance(dt, timedelta):
+            prop = icalendar.vDuration(dt)
+        elif isinstance(dt, time):
+            prop = icalendar.vTime(dt)
+        elif isinstance(dt, tuple) and len(dt) == 2:
+            prop = icalendar.vPeriod(dt)
+        else:
+            raise ValueError(f'Unknown date type: {type(dt)}')
     if isinstance(prop, icalendar.vText):
-        return str(prop)
+        return [name, params, "text", str(prop)]
     if isinstance(prop, icalendar.vDate):
-        return f"{prop.dt.year:04}{prop.dt.month:02}{prop.dt.day:02}"
+        val = prop.dt.isoformat()
+        if params.get('VALUE') == 'DATE':
+            params.pop('VALUE')
+        return [name, params, "date", val]
     if isinstance(prop, icalendar.vDatetime):
-        return f"{prop.dt.year:04}{prop.dt.month:02}{prop.dt.day:02}T{prop.dt.hour:02}{prop.dt.minute:02}{prop.dt.second:02}"
+        tzid = icalendar.prop.tzid_from_dt(dt)
+        val = prop.dt.strftime("%Y-%m-%dT%H:%M:%S")
+        if tzid == 'UTC':
+            val += "Z"
+        elif tzid:
+            params.update({'TZID': tzid})
+        return [name, params, "date-time", val]
+    return [name, params, "unknown", str(prop)]
 
 
 def to_jcal(comp: icalendar.Component):
-    properties = []
-    for name, value in comp.items():
-        properties.append([name.lower(), dict(value.params), TYPE_MAP.get(value.__class__), str(value)])
+    properties = [convert_property(name, value) for name, value in comp.items()]
     return [
         comp.name.lower(),
-        [properties],
+        properties,
         [to_jcal(subcomp) for subcomp in comp.subcomponents],
     ]
 
