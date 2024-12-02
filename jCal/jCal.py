@@ -299,9 +299,11 @@ def ical_property_to_jcal(name: str, prop):
         yield CONVERSION_MAP[value](prop, params, name)
 
 
-def to_jcal(comp: icalendar.Component | list[icalendar.Component]):
+def ical_to_jcal(comp: str | icalendar.Component | list[icalendar.Component]) -> list:
+    if isinstance(comp, str):
+        comp = icalendar.Component.from_ical(comp, multiple=True)
     if isinstance(comp, list):
-        res = [to_jcal(subcomp) for subcomp in comp]
+        res = [ical_to_jcal(subcomp) for subcomp in comp]
         if len(res) == 1:
             return res[0]
         return res
@@ -312,14 +314,8 @@ def to_jcal(comp: icalendar.Component | list[icalendar.Component]):
     return [
         comp.name.lower(),
         properties,
-        [to_jcal(subcomp) for subcomp in comp.subcomponents],
+        [ical_to_jcal(subcomp) for subcomp in comp.subcomponents],
     ]
-
-
-def from_ical(ical: str | icalendar.Component | list[icalendar.Component]):
-    if isinstance(ical, str):
-        ical = icalendar.Component.from_ical(ical, multiple=True)
-    return to_jcal(ical)
 
 
 def jcal_to_ddtypes(jcal_val, prop_type, params: dict):
@@ -403,7 +399,7 @@ VALUE_TO_TYPE_MAP = {
 }
 
 
-def from_jcal(jcal: list | str):
+def jcal_to_ical(jcal: list | str) -> icalendar.Component | list[icalendar.Component]:
     if isinstance(jcal, str):
         jcal = json.loads(jcal)
     if not isinstance(jcal, list):
@@ -411,7 +407,7 @@ def from_jcal(jcal: list | str):
     if not jcal:
         raise ValueError("Empty jCal")
     if isinstance(jcal[0], list):
-        return [from_jcal(subjcal) for subjcal in jcal]
+        return [jcal_to_ical(subjcal) for subjcal in jcal]
     if not len(jcal) == 3:
         raise ValueError("Invalid jCal format (Component must have 3 elements)")
     c_name, properties, subcomponents = jcal
@@ -425,11 +421,13 @@ def from_jcal(jcal: list | str):
         print(f"Adding property {p_name=} ({value_type=}) with {value=} and {params=}")
         p_name_type = icalendar.cal.types_factory.types_map.get(p_name, None)
         if p_name_type == "geo" and value_type == "float":
-            # Special case for geo properties the value type if float
+            # Special case for geo properties
+            # the value type is float as per the spec
             # but we should parse it as geo
             value_type = "geo"
         if p_name_type == "request-status" and value_type == "text":
-            # Special case for request-status properties the value type if text
+            # Special case for request-status properties
+            # the value type is text as per the spec
             # but we should parse it as request-status
             value_type = "request-status"
         if value_type != "unknown" and p_name_type != value_type:
@@ -448,5 +446,73 @@ def from_jcal(jcal: list | str):
             value = icalendar.parser.escape_char(value)
         component.add(name=p_name, value=value, parameters=params)
     for subcomp in subcomponents:
-        component.add_component(from_jcal(subcomp))
+        component.add_component(jcal_to_ical(subcomp))
     return component
+
+
+def jcal_to_dcal(jcal: list | str) -> dict | list[dict]:
+    if isinstance(jcal, str):
+        jcal = json.loads(jcal)
+    if not isinstance(jcal, list):
+        raise ValueError("Invalid jCal format")
+    if not jcal:
+        return None
+    if isinstance(jcal[0], list):
+        return [jcal_to_dcal(subjcal) for subjcal in jcal]
+    if not len(jcal) == 3:
+        raise ValueError("Invalid jCal format (Component must have 3 elements)")
+    c_name, properties, subcomponents = jcal
+    properties_dict = {}
+    for prop in properties:
+        p_name, params, value_type, value = (prop[0], prop[1], prop[2], prop[3])
+        prop_dict = {
+            "params": params,
+            "value_type": value_type,
+            "value": value,
+        }
+        if p_name in properties_dict:
+            value = properties_dict[p_name]
+            if not isinstance(value, list):
+                value = [value]
+            value.append(prop_dict)
+            properties_dict[p_name] = value
+        else:
+            properties_dict[p_name] = prop_dict
+    return {
+        "component": c_name,
+        "properties": properties_dict,
+        "subcomponents": [jcal_to_dcal(sub_jcal) for sub_jcal in subcomponents],
+    }
+
+
+def dcal_to_jcal(dcal: str | dict | list[dict]) -> list:
+    if isinstance(dcal, str):
+        dcal = json.loads(dcal)
+    if not dcal:
+        return None
+    if isinstance(dcal, list):
+        return [dcal_to_jcal(subdcal) for subdcal in dcal]
+    component = dcal["component"]
+    properties = []
+    for p_name, prop in dcal["properties"].items():
+        if isinstance(prop, list):
+            for p in prop:
+                properties.append([p_name, p["params"], p["value_type"], p["value"]])
+        else:
+            properties.append(
+                [p_name, prop["params"], prop["value_type"], prop["value"]]
+            )
+    subcomponents = [dcal_to_jcal(subjcal) for subjcal in dcal["subcomponents"]]
+    return [component, properties, subcomponents]
+
+
+def ical_to_dcal(
+    ical: str | icalendar.Component | list[icalendar.Component],
+) -> dict | list[dict]:
+    return jcal_to_dcal(ical_to_jcal(ical))
+
+
+def dcal_to_ical(
+    dcal: str | dict | list[dict],
+) -> icalendar.Component | list[icalendar.Component]:
+    return jcal_to_ical(dcal_to_jcal(dcal))
