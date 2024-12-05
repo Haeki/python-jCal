@@ -281,6 +281,9 @@ def ical_property_to_jcal(name: str, prop):
             elif isinstance(prop.dt, tuple):
                 value = "period"
                 prop = icalendar.vPeriod(prop.dt)
+            elif isinstance(prop.dt, timedelta):
+                value = "duration"
+                prop = icalendar.vDuration(prop.dt)
         elif name in CONVERSION_MAP:
             value = name
         elif v := TYPE_TO_VALUE_MAP.get(type(prop), None):
